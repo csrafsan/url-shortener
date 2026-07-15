@@ -1,0 +1,5 @@
+fastapi[standard]
+sqlalchemy
+cryptography
+uvicorn
+redis
