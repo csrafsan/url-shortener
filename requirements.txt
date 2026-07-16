@@ -3,3 +3,4 @@ sqlalchemy
 cryptography
 uvicorn
 redis
+psycopg2-binary
