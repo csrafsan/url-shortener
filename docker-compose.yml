@@ -1,6 +1,10 @@
 version: '3.8'
 
 services:
+  cache:
+    image: redis:alpine
+    expose:
+      - "6379"
   
   web1:
     build: .
@@ -8,6 +12,7 @@ services:
       - ./sqlite_data:/app/db_volume
     environment:
       - DATABASE_URL=sqlite:////app/db_volume/minilink.db
+      - REDIS_URL=redis://cache:6379
 
   web2:
     build: .
@@ -15,6 +20,7 @@ services:
       - ./sqlite_data:/app/db_volume
     environment:
       - DATABASE_URL=sqlite:////app/db_volume/minilink.db
+      - REDIS_URL=redis://cache:6379
 
   web3:
     build: .
@@ -22,6 +28,7 @@ services:
       - ./sqlite_data:/app/db_volume
     environment:
       - DATABASE_URL=sqlite:////app/db_volume/minilink.db
+      - REDIS_URL=redis://cache:6379
 
   loadbalancer:
     image: nginx:latest
