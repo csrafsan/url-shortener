@@ -1,16 +1,15 @@
-# main.py
-import hashlib
-import json
+# main.py (Updated with Rate Limiting)
 import os
+import json
 import redis
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 from sqlalchemy.orm import Session
 from database import get_db, URLModel
 
-app = FastAPI(title="Mini-Link Monolith with Caching")
+app = FastAPI(title="Distributed Mini-Link with Rate Limiting")
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,9 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Connect to Redis using the injected environment variable
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-# decode_responses=True automatically converts Redis bytes to Python strings
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 
 class URLCreate(BaseModel):
@@ -32,10 +29,8 @@ class URLCreate(BaseModel):
 BASE62_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 def encode_base62(num: int) -> str:
-    """Converts a unique integer counter into a compact short string."""
     if num == 0:
         return BASE62_ALPHABET[0]
-    
     arr = []
     base = len(BASE62_ALPHABET)
     while num > 0:
@@ -45,67 +40,71 @@ def encode_base62(num: int) -> str:
     return "".join(arr)
 
 def generate_distributed_code() -> str:
-    """Uses Redis Atomic Counter to safely issue unique IDs across servers."""
-    # redis_client.incr is guaranteed thread-safe across all 5 servers
     global_id = redis_client.incr("global:url:counter")
-    
-    # Optional offset so your initial short URLs don't look like 'b' or 'c'
-    # Starting at 10,000,000 creates a clean 5-character string instantly
     offset_id = global_id + 10000000 
-    
     return encode_base62(offset_id)
 
-def generate_short_code(url: str) -> str:
-    hash_object = hashlib.md5(url.encode())
-    return hash_object.hexdigest()[:6]
 
-@app.post("/shorten")
+# --- NEW RATE LIMITER DEPENDENCY ---
+def rate_limit_shorten(request: Request):
+    """Limits IP addresses to 5 shorten requests per minute."""
+    client_ip = request.client.host
+    redis_key = f"limit:shorten:{client_ip}"
+    
+    # Increment the counter for this IP
+    current_requests = redis_client.incr(redis_key)
+    
+    # If it's the first request in this window, set TTL to 60 seconds
+    if current_requests == 1:
+        redis_client.expire(redis_key, 60)
+        
+    # If they exceed the limit of 5, reject them
+    if current_requests > 5:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded. You can only shorten 5 URLs per minute."
+        )
+
+
+# --- APPLY TO POST ROUTE ---
+@app.post("/shorten", dependencies=[Depends(rate_limit_shorten)]) # <-- Add dependency here!
 def shorten_url(payload: URLCreate, db: Session = Depends(get_db)):
     long_url_str = str(payload.url)
     
-    # 1. Check if the URL already exists in PostgreSQL to avoid duplicates
     existing = db.query(URLModel).filter(URLModel.long_url == long_url_str).first()
     if existing:
         redis_client.setex(f"link:{existing.short_code}", 300, existing.long_url)
         return {"short_url": f"http://localhost:8080/{existing.short_code}"}
     
-    # 2. Safely generate a completely unique, non-colliding short code
     code = generate_distributed_code()
     
-    # 3. Commit to database
     new_url = URLModel(long_url=long_url_str, short_code=code)
     db.add(new_url)
     db.commit()
     
-    # 4. Save to Redis cache to speed up the immediate next read
     redis_client.setex(f"link:{code}", 300, long_url_str)
     
     return {"short_url": f"http://localhost:8080/{code}"}
 
-# (...keeping my app setup, Base62 logic, and POST /shorten exactly the same...)
+
 @app.get("/{short_code}")
 def redirect_to_long(short_code: str, request: Request, db: Session = Depends(get_db)):
-    # 1. Try to serve from Redis cache
     cached_url = redis_client.get(f"link:{short_code}")
     
     if cached_url:
-        # --- ASYNC LOGIC FOR CACHE HIT ---
         payload = {
             "short_code": short_code,
             "user_agent": request.headers.get("user-agent", "unknown")
         }
-        redis_client.rpush("queue:analytics", json.dumps(payload)) # Pushes event instantly
-        
+        redis_client.rpush("queue:analytics", json.dumps(payload))
         return RedirectResponse(url=cached_url, status_code=302)
     
-    # 2. Fallback to PostgreSQL on Cache Miss
     url_record = db.query(URLModel).filter(URLModel.short_code == short_code).first()
     if not url_record:
         raise HTTPException(status_code=404, detail="Short link not found")
         
     redis_client.setex(f"link:{short_code}", 300, url_record.long_url)
     
-    # --- ASYNC LOGIC FOR CACHE MISS ---
     payload = {
         "short_code": short_code,
         "user_agent": request.headers.get("user-agent", "unknown")
