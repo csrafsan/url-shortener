@@ -1,8 +1,9 @@
 # main.py
 import hashlib
+import json
 import os
 import redis
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
@@ -81,24 +82,34 @@ def shorten_url(payload: URLCreate, db: Session = Depends(get_db)):
     
     return {"short_url": f"http://localhost:8080/{code}"}
 
-# (Keep your @app.get("/{short_code}") endpoint exactly the same as Phase 3)
-
+# (...keeping my app setup, Base62 logic, and POST /shorten exactly the same...)
 @app.get("/{short_code}")
-def redirect_to_long(short_code: str, db: Session = Depends(get_db)):
-    # --- 1. Check Redis Cache First ---
+def redirect_to_long(short_code: str, request: Request, db: Session = Depends(get_db)):
+    # 1. Try to serve from Redis cache
     cached_url = redis_client.get(f"link:{short_code}")
+    
     if cached_url:
-        print(f"[CACHE HIT] Serving {short_code} from Redis memory!", flush=True)
+        # --- ASYNC LOGIC FOR CACHE HIT ---
+        payload = {
+            "short_code": short_code,
+            "user_agent": request.headers.get("user-agent", "unknown")
+        }
+        redis_client.rpush("queue:analytics", json.dumps(payload)) # Pushes event instantly
+        
         return RedirectResponse(url=cached_url, status_code=302)
     
-    # --- 2. Cache Miss: Fallback to SQLite ---
-    print(f"[CACHE MISS] Fetching {short_code} from SQLite database...", flush=True)
+    # 2. Fallback to PostgreSQL on Cache Miss
     url_record = db.query(URLModel).filter(URLModel.short_code == short_code).first()
-    
     if not url_record:
         raise HTTPException(status_code=404, detail="Short link not found")
-    
-    # --- 3. Save to Cache for Next Time ---
+        
     redis_client.setex(f"link:{short_code}", 300, url_record.long_url)
     
+    # --- ASYNC LOGIC FOR CACHE MISS ---
+    payload = {
+        "short_code": short_code,
+        "user_agent": request.headers.get("user-agent", "unknown")
+    }
+    redis_client.rpush("queue:analytics", json.dumps(payload))
+
     return RedirectResponse(url=url_record.long_url, status_code=302)

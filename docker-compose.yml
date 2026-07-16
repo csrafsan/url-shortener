@@ -60,6 +60,18 @@ services:
       - web2
       - web3
     
+    # Added this service block right next to my other services in docker-compose.yml
+  analytics_worker:
+    build: .
+    command: python worker.py  # Telling this container to run the worker loop instead of uvicorn
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/minilink
+      - REDIS_URL=redis://cache:6379
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - db
+      - cache
+    
 
 # Named volume to guarantee database updates persist if containers restart
 volumes:
