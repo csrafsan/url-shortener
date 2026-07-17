@@ -1,0 +1,8 @@
+# prometheus.yml
+global:
+  scrape_interval: 5s # How often to poll the containers for data
+
+scrape_configs:
+  - job_name: 'fastapi_cluster'
+    static_configs:
+      - targets: ['web1:8000', 'web2:8000', 'web3:8000']

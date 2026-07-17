@@ -29,6 +29,8 @@ services:
     depends_on:
       - db
       - cache
+    # ports:
+    #   - "8001:8000" # <-- Added this line for web1 individual test!
 
   web2:
     build: .
@@ -80,7 +82,28 @@ services:
       - PYTHONUNBUFFERED=1
     depends_on:
       - db
-    
+
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9095:9090"
+    depends_on:
+      - web1
+      - web2
+      - web3
+
+  grafana:
+    image: grafana/grafana:10.0.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus    
 
 # Named volume to guarantee database updates persist if containers restart
 volumes:
