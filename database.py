@@ -18,6 +18,9 @@ class URLModel(Base):
     id = Column(Integer, primary_key=True, index=True)
     long_url = Column(String, nullable=False)
     short_code = Column(String, unique=True, index=True, nullable=False)
+    # --- ADDED THE EXPIRATION COLUMN ---
+    # Indexing this is critical because our Janitor will run queries filtering by this column!
+    expires_at = Column(DateTime, index=True, nullable=False)
 
     # --- ADDED ANALYTICS MODEL ---
 class ClickAnalyticsModel(Base):

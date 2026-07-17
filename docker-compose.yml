@@ -71,6 +71,15 @@ services:
     depends_on:
       - db
       - cache
+  
+  db_janitor:
+    build: .
+    command: python janitor.py
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/minilink
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - db
     
 
 # Named volume to guarantee database updates persist if containers restart

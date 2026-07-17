@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 from sqlalchemy.orm import Session
 from database import get_db, URLModel
+from datetime import datetime, timedelta # <-- Added imports
 
 app = FastAPI(title="Distributed Mini-Link with Rate Limiting")
 
@@ -74,17 +75,19 @@ def shorten_url(payload: URLCreate, db: Session = Depends(get_db)):
     existing = db.query(URLModel).filter(URLModel.long_url == long_url_str).first()
     if existing:
         redis_client.setex(f"link:{existing.short_code}", 300, existing.long_url)
-        return {"short_url": f"http://localhost:8080/{existing.short_code}"}
+        return {"short_url": f"http://localhost:9090/{existing.short_code}"}
     
     code = generate_distributed_code()
+    # Calculate expiration date (e.g., 5 minutes from now for testing)
+    expiration_time = datetime.utcnow() + timedelta(minutes=5)
     
-    new_url = URLModel(long_url=long_url_str, short_code=code)
+    new_url = URLModel(long_url=long_url_str, short_code=code, expires_at=expiration_time)
     db.add(new_url)
     db.commit()
     
     redis_client.setex(f"link:{code}", 300, long_url_str)
     
-    return {"short_url": f"http://localhost:8080/{code}"}
+    return {"short_url": f"http://localhost:9090/{code}"}
 
 
 @app.get("/{short_code}")
@@ -99,11 +102,17 @@ def redirect_to_long(short_code: str, request: Request, db: Session = Depends(ge
         redis_client.rpush("queue:analytics", json.dumps(payload))
         return RedirectResponse(url=cached_url, status_code=302)
     
+   # Fallback to Database
     url_record = db.query(URLModel).filter(URLModel.short_code == short_code).first()
-    if not url_record:
-        raise HTTPException(status_code=404, detail="Short link not found")
+    
+    # --- CHECK IF LINK HAS EXPIRED IN THE DATABASE ---
+    if not url_record or url_record.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=404, detail="This short link has expired or does not exist.")
         
-    redis_client.setex(f"link:{short_code}", 300, url_record.long_url)
+    # Re-cache if still valid
+    remaining_seconds = int((url_record.expires_at - datetime.utcnow()).total_seconds())
+    if remaining_seconds > 0:
+        redis_client.setex(f"link:{short_code}", remaining_seconds, url_record.long_url)
     
     payload = {
         "short_code": short_code,
