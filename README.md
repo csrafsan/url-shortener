@@ -1,35 +1,54 @@
 # URL Shortener
 
-A scalable URL shortener service built with FastAPI, PostgreSQL, Redis, Docker, and Nginx.
+A scalable URL shortener service built with FastAPI, PostgreSQL, Redis, Docker, Nginx, and Prometheus.
 
 ## Overview
 
-This repository demonstrates a URL shortening system with:
+This project demonstrates a distributed URL shortening system with:
 
-- FastAPI web service for shortening and redirecting URLs
-- PostgreSQL for durable storage of original links
-- Redis for caching and distributed sequence generation
-- Docker Compose orchestration for local development
-- Nginx load balancing across multiple backend replicas
+- FastAPI endpoints for creating short links and redirecting them
+- PostgreSQL for durable storage of original URLs
+- Redis for caching and fast lookups
+- Nginx for load balancing across multiple app replicas
+- Prometheus and Grafana monitoring for app metrics
+- A simple frontend UI served from the static folder
 
 ## Features
 
 - Create short URLs from long URLs
-- Redirect short codes to original URLs
+- Redirect short codes to the original destination
 - Persistent storage in PostgreSQL
 - Cache redirects in Redis for low latency
-- Load balanced web replicas using Nginx
-- Distributed Base62 short-code generation using Redis counters
+- Distributed short-code generation using a Snowflake-style ID generator
+- Basic analytics support for redirect events
+- Prometheus metrics exposed at /metrics
 
 ## Project Structure
 
-- `main.py` - FastAPI application and redirect flow
-- `database.py` - PostgreSQL setup and database helper functions
-- `docker-compose.yml` - Compose file for app, PostgreSQL, Redis, and Nginx
-- `Dockerfile` - Application container image definition
-- `nginx.conf` - Nginx reverse proxy and load balancer configuration
-- `worker.py` - Background worker (if included in the design)
-- `janitor.py` - Cleanup or maintenance utility
+- main.py - FastAPI application, routing, rate limiting, and redirect logic
+- database.py - SQLAlchemy models and database session setup
+- snowflake.py - Distributed ID generation helper
+- static/index.html - Simple frontend for shortening URLs
+- docker-compose.yml - Compose setup for app, database, Redis, Nginx, worker, and monitoring services
+- worker.py - Background worker for analytics processing
+- janitor.py - Cleanup utility for expired links
+- prometheus.yml - Prometheus scrape configuration
+
+## Quick Start with Docker Compose
+
+1. Make sure Docker is running.
+2. Start the full stack:
+
+```bash
+docker compose up --build
+```
+
+3. Open the app in your browser:
+
+- Frontend: http://localhost:9090/
+- API docs: http://localhost:8000/docs
+- Prometheus: http://localhost:9095/
+- Grafana: http://localhost:3000/
 
 ## Local Development
 
@@ -38,7 +57,7 @@ This repository demonstrates a URL shortening system with:
 ```bash
 python -m venv venv
 source venv/bin/activate    # Linux/macOS
-venv\Scripts\activate     # Windows
+venv\Scripts\activate       # Windows
 ```
 
 2. Install dependencies:
@@ -47,35 +66,46 @@ venv\Scripts\activate     # Windows
 pip install -r requirements.txt
 ```
 
-3. Start the app:
+3. Start the app locally:
 
 ```bash
 uvicorn main:app --reload
 ```
 
-4. Open the API docs at `http://127.0.0.1:8000/docs`
+4. Open the API docs at http://127.0.0.1:8000/docs
 
-## Run with Docker Compose
+## Example API Usage
 
-Start all services together:
+Shorten a URL:
 
 ```bash
-docker compose up --build
+curl -X POST "http://127.0.0.1:8000/shorten" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com"}'
 ```
 
-Then access the service through the load balancer or app endpoint.
+Redirect using a short code:
+
+```bash
+curl -I "http://127.0.0.1:8000/abc123"
+```
 
 ## Environment Variables
 
-- `DATABASE_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection string
+- DATABASE_URL - PostgreSQL connection string
+- REDIS_URL - Redis connection string
+- WORKER_ID - Unique worker ID for distributed ID generation (used in Docker Compose)
 
 ## Docker Compose Services
 
-- `db` - PostgreSQL database
-- `cache` - Redis cache
-- `web1`, `web2`, `web3` - application replicas
-- `loadbalancer` - Nginx reverse proxy
+- db - PostgreSQL database
+- cache - Redis cache
+- web1, web2, web3 - Application replicas
+- loadbalancer - Nginx reverse proxy
+- analytics_worker - Background analytics worker
+- db_janitor - Cleanup job for expired links
+- prometheus - Metrics collection
+- grafana - Dashboard UI
 
 ## License
 
