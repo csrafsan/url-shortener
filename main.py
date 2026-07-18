@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 from database import get_db, URLModel
 from datetime import datetime, timedelta
 from prometheus_fastapi_instrumentator import Instrumentator
+from fastapi.responses import HTMLResponse, RedirectResponse
+from database import ClickAnalyticsModel
+from sqlalchemy import func
 
 app = FastAPI(title="Distributed Mini-Link with Rate Limiting")
 # Expose Prometheus metrics at /metrics
@@ -66,7 +69,14 @@ def rate_limit_shorten(request: Request):
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Rate limit exceeded. You can only shorten 5 URLs per minute."
         )
+        
 
+        # added static page
+    
+@app.get("/", response_class=HTMLResponse)
+def read_index():
+    with open("static/index.html", "r") as f:
+        return f.read()
 
 @app.post("/shorten", dependencies=[Depends(rate_limit_shorten)])
 def shorten_url(payload: URLCreate, db: Session = Depends(get_db)):
@@ -128,3 +138,12 @@ def redirect_to_long(short_code: str, request: Request, db: Session = Depends(ge
     redis_client.rpush("queue:analytics", json.dumps(payload))
 
     return RedirectResponse(url=url_record.long_url, status_code=302)
+
+
+# ... added this below my redirect/shorten routes ...
+
+@app.get("/analytics/{short_code}")
+def get_link_analytics(short_code: str, db: Session = Depends(get_db)):
+    """Queries PostgreSQL for total clicks handled by the worker tier."""
+    click_count = db.query(ClickAnalyticsModel).filter(ClickAnalyticsModel.short_code == short_code).count()
+    return {"short_code": short_code, "total_clicks": click_count}

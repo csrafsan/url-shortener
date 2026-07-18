@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distributed Mini-Link Cluster</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen font-sans antialiased">
+
+    <!-- Navbar -->
+    <nav class="border-b border-gray-800 bg-gray-950 px-6 py-4 flex justify-between items-center">
+        <div class="flex items-center space-x-3">
+            <span class="text-2xl">🔗</span>
+            <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
+                Mini-Link Architecture Dashboard
+            </h1>
+        </div>
+        <div class="flex items-center space-x-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-green-500 animate-pulse"></span>
+            <span class="text-xs text-gray-400 font-mono">Cluster Status: Operational</span>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <!-- Left Side: Interactive Playground -->
+        <div class="md:col-span-2 space-y-6">
+            <!-- URL Shortener Card -->
+            <div class="bg-gray-950 p-6 rounded-xl border border-gray-800 shadow-xl">
+                <h2 class="text-lg font-semibold mb-4 text-blue-400">Generate Short URL</h2>
+                <div class="flex gap-3">
+                    <input type="url" id="longUrl" placeholder="https://example.com/very-long-query-string" 
+                           class="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-blue-500 text-gray-200">
+                    <button onclick="shortenUrl()" 
+                            class="bg-blue-600 hover:bg-blue-500 text-white font-medium px-5 py-2 rounded-lg text-sm transition shadow-lg shadow-blue-900/20">
+                        Shorten
+                    </button>
+                </div>
+                
+                <!-- Result Box (Upgraded with Analytics & Copy Action) -->
+                <div id="resultBox" class="mt-4 hidden p-4 rounded-lg border text-sm font-mono transition-all"></div>
+            </div>
+
+            <!-- Architecture Breakdown -->
+            <div class="bg-gray-950 p-6 rounded-xl border border-gray-800 shadow-xl">
+                <h3 class="text-md font-semibold mb-3 text-gray-300">System Topology Architecture</h3>
+                <div class="grid grid-cols-4 gap-2 text-center text-xs font-mono">
+                    <div class="p-3 bg-gray-900 border border-gray-800 rounded-lg text-yellow-400">NGINX Gateway</div>
+                    <div class="p-3 bg-gray-900 border border-gray-800 rounded-lg text-blue-400">FastAPI Cluster (x3)</div>
+                    <div class="p-3 bg-gray-900 border border-gray-800 rounded-lg text-red-400">Redis Limiter / Queue</div>
+                    <div class="p-3 bg-gray-900 border border-gray-800 rounded-lg text-purple-400">Async Workers + DB</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side: Live Telemetry & Attacks -->
+        <div class="space-y-6">
+            <!-- Rate Limiter Testing Station -->
+            <div class="bg-gray-950 p-6 rounded-xl border border-gray-800 shadow-xl">
+                <h2 class="text-lg font-semibold mb-2 text-orange-400">Chaos Engineering</h2>
+                <p class="text-xs text-gray-400 mb-4">Simulate a malicious client script to test the Redis Fixed Window Rate Limiter (Max 5/min).</p>
+                <button onclick="simulateAttack()" 
+                        class="w-full bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-semibold py-2.5 rounded-lg text-sm transition tracking-wide shadow-lg shadow-red-900/20">
+                    ⚡ Trigger Stress Test Attack
+                </button>
+            </div>
+
+            <!-- Microservice Log Ticker -->
+            <div class="bg-gray-950 p-6 rounded-xl border border-gray-800 shadow-xl flex flex-col h-[230px]">
+                <h2 class="text-sm font-semibold mb-2 text-purple-400 tracking-wider uppercase font-mono">UI Event Log</h2>
+                <div id="logConsole" class="flex-1 bg-gray-900 rounded-lg p-3 text-xs font-mono text-gray-400 overflow-y-auto space-y-1 border border-gray-800">
+                    <div class="text-gray-500">// System ready. Awaiting interaction...</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripting Logic -->
+    <script>
+        const logConsole = document.getElementById('logConsole');
+        const resultBox = document.getElementById('resultBox');
+        let currentShortCode = '';
+        let analyticsInterval = null;
+
+        function log(message, type = 'info') {
+            const colors = { info: 'text-gray-400', success: 'text-green-400', error: 'text-red-400', warn: 'text-orange-400' };
+            const time = new Date().toLocaleTimeString();
+            logConsole.innerHTML += `<div class="${colors[type]}">[${time}] ${message}</div>`;
+            logConsole.scrollTop = logConsole.scrollHeight;
+        }
+
+        async function shortenUrl() {
+            const longUrl = document.getElementById('longUrl').value;
+            if (!longUrl) return alert("Please enter a valid URL.");
+
+            log(`Sending payload to NGINX balancing tier...`, 'info');
+            if (analyticsInterval) clearInterval(analyticsInterval);
+            
+            try {
+                const response = await fetch('/shorten', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: longUrl })
+                });
+
+                const data = await response.json();
+
+                if (response.status === 200) {
+                    const shortUrl = data.short_url;
+                    currentShortCode = shortUrl.split('/').pop();
+                    
+                    renderSuccessBox(shortUrl, 0);
+                    log(`Short code [${currentShortCode}] registered. Starting Async DB telemetry tracking...`, 'success');
+                    
+                    // Poll PostgreSQL analytics via our new endpoint every 2 seconds
+                    startAnalyticsPolling(currentShortCode);
+                } else if (response.status === 429) {
+                    show429Error(data.detail);
+                } else {
+                    throw new Error(data.detail || "Unknown API Error");
+                }
+            } catch (err) {
+                log(`Error: ${err.message}`, 'error');
+            }
+        }
+
+        function renderSuccessBox(url, clicks) {
+            resultBox.className = "mt-4 p-4 rounded-lg border bg-green-950/20 border-green-800/80 text-green-400 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 block";
+            resultBox.innerHTML = `
+                <div>
+                    <div class="text-xs uppercase text-green-500 font-bold tracking-wider mb-1">Generated Link</div>
+                    <a href="${url}" target="_blank" class="underline font-bold text-base hover:text-green-300 break-all">${url}</a>
+                    <div class="mt-2 text-xs text-gray-400">
+                        📊 Live Clicks (Worker Tier): <span id="clickCounter" class="text-white font-bold bg-gray-800 px-2 py-0.5 rounded border border-gray-700">${clicks} clicks</span>
+                    </div>
+                </div>
+                <button onclick="copyToClipboard('${url}')" id="copyBtn" class="bg-green-800 hover:bg-green-700 text-white font-medium text-xs px-4 py-2 rounded transition shadow-md self-start sm:self-center whitespace-nowrap">
+                    📋 Copy Link
+                </button>
+            `;
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.getElementById('copyBtn');
+                btn.innerText = "✨ Copied!";
+                btn.classList.replace('bg-green-800', 'bg-blue-600');
+                log("Copied short link to system clipboard.", "info");
+                setTimeout(() => {
+                    if(btn) {
+                        btn.innerText = "📋 Copy Link";
+                        btn.classList.replace('bg-blue-600', 'bg-green-800');
+                    }
+                }, 2000);
+            });
+        }
+
+        function startAnalyticsPolling(code) {
+            analyticsInterval = setInterval(async () => {
+                try {
+                    const res = await fetch(`/analytics/${code}`);
+                    if (res.status === 200) {
+                        const analyticsData = await res.json();
+                        const counterEl = document.getElementById('clickCounter');
+                        if (counterEl) {
+                            counterEl.innerText = `${analyticsData.total_clicks} clicks`;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Analytics poll failed", e);
+                }
+            }, 2000);
+        }
+
+        function show429Error(message) {
+            if (analyticsInterval) clearInterval(analyticsInterval);
+            resultBox.className = "mt-4 p-4 rounded-lg border bg-red-950/30 border-red-900 text-red-400 block";
+            resultBox.innerHTML = `<strong>⚠️ HTTP 429 Locked Out:</strong> ${message}`;
+            log(`SECURITY TRIGGERED: Redis rate-limiter locked IP out.`, 'error');
+        }
+
+        async function simulateAttack() {
+            log(`🚀 Launching concurrent baseline stress test (6 fast requests)...`, 'warn');
+            const longUrl = "https://hiring-manager-demo.com";
+            
+            for (let i = 1; i <= 6; i++) {
+                setTimeout(async () => {
+                    try {
+                        const res = await fetch('/shorten', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ url: longUrl })
+                        });
+                        const data = await res.json();
+                        
+                        if (res.status === 429) {
+                            show429Error(data.detail);
+                        } else {
+                            log(`Request #${i}: HTTP 200 OK`, 'success');
+                        }
+                    } catch (e) {
+                        log(`Request #${i} connection dropped.`, 'error');
+                    }
+                }, i * 150);
+            }
+        }
+    </script>
+</body>
+</html>
