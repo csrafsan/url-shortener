@@ -13,6 +13,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from fastapi.responses import HTMLResponse, RedirectResponse
 from database import ClickAnalyticsModel
 from sqlalchemy import func
+from snowflake import id_worker  # <-- Add import
 
 app = FastAPI(title="Distributed Mini-Link with Rate Limiting")
 # Expose Prometheus metrics at /metrics
@@ -50,9 +51,16 @@ def encode_base62(num: int) -> str:
 
 
 def generate_distributed_code() -> str:
-    global_id = redis_client.incr("global:url:counter")
-    offset_id = global_id + 10000000
-    return encode_base62(offset_id)
+   # OLD REDIS APPROACH:
+    # global_id = redis_client.incr("global:url:counter")
+    # offset_id = global_id + 10000000
+    # return encode_base62(offset_id)
+
+    # NEW DECENTRALIZED SNOWFLAKE APPROACH:
+    global_id = id_worker.generate_id()
+    return encode_base62(global_id)
+
+
 
 
 def rate_limit_shorten(request: Request):

@@ -24,6 +24,7 @@ services:
   web1:
     build: .
     environment:
+      - WORKER_ID=1  # Unique ID for node 1
       - DATABASE_URL=postgresql://user:password@db:5432/minilink
       - REDIS_URL=redis://cache:6379
     depends_on:
@@ -35,6 +36,7 @@ services:
   web2:
     build: .
     environment:
+      - WORKER_ID=2  # Unique ID for node 2
       - DATABASE_URL=postgresql://user:password@db:5432/minilink
       - REDIS_URL=redis://cache:6379
     depends_on:
@@ -44,6 +46,7 @@ services:
   web3:
     build: .
     environment:
+      - WORKER_ID=3  # Unique ID for node 3
       - DATABASE_URL=postgresql://user:password@db:5432/minilink
       - REDIS_URL=redis://cache:6379
     depends_on:
